@@ -1,0 +1,19 @@
+{
+  "url": "automation/test-application.html",
+  "submit": false,
+  "candidate": {
+    "name": "Test Candidate",
+    "email": "test@example.com",
+    "phone": "+1 555 0100",
+    "location": "Remote"
+  },
+  "files": {
+    "resumePath": "automation/test-resume.txt",
+    "coverLetterPath": "automation/test-cover-letter.txt"
+  },
+  "answers": {
+    "Years of experience": "4",
+    "Salary expectation": "Competitive",
+    "Why are you interested": "This test role matches my frontend experience."
+  }
+}

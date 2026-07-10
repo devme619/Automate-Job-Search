@@ -1,0 +1,7 @@
+OK: Open page
+OK: Find and click Apply button
+OK: Fill candidate fields
+OK: Upload resume and cover letter
+OK: Answer custom questions
+OK: Advance through application pages
+Dry run: stopped before final submit. Rerun with --submit to click the final submit button.

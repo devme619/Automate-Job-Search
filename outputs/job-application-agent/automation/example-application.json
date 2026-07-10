@@ -1,0 +1,20 @@
+{
+  "url": "https://example.com/jobs/frontend-engineer",
+  "submit": false,
+  "candidate": {
+    "name": "Your Name",
+    "email": "you@example.com",
+    "phone": "+1 555 0100",
+    "location": "Remote"
+  },
+  "files": {
+    "resumePath": "C:/Users/devme/Documents/resume.pdf",
+    "coverLetterPath": "C:/Users/devme/Documents/cover-letter.pdf"
+  },
+  "answers": {
+    "Years of experience": "4",
+    "Salary expectation": "Competitive / open to market range",
+    "Work authorization": "Yes",
+    "Why are you interested": "The role maps closely to my experience and product engineering interests."
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "keywords": "Frontend Engineer React",
+  "location": "India",
+  "postedWithin": "r86400",
+  "maxJobs": 25,
+  "intervalMinutes": 0,
+  "autoApply": false,
+  "submit": false,
+  "candidate": {
+    "name": "Devendra",
+    "email": "you@example.com",
+    "phone": "",
+    "location": "India"
+  },
+  "files": {
+    "resumePath": "C:/Users/devme/Documents/resume.pdf",
+    "coverLetterPath": "C:/Users/devme/Documents/cover-letter.pdf"
+  },
+  "answerStrategy": {
+    "persona": "Devendra",
+    "limitWords": 150,
+    "resumeSource": "Frontend engineer with React, JavaScript, TypeScript, accessibility, API integration, testing, and performance experience."
+  },
+  "answers": {
+    "Work authorization": "Yes",
+    "Notice period": "Immediate / negotiable",
+    "Current salary": "Prefer not to disclose",
+    "Expected salary": "Competitive / open to market range"
+  }
+}
