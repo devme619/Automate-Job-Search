@@ -412,15 +412,55 @@ function App() {
     }));
   }
 
-  function scanJobs() {
-    const jobs = parseImportedJobs(selectedRole);
+  async function fetchScrapedJobs(role) {
+    try {
+      const response = await fetch(
+        `/automation/artifacts/linkedin-jobs.json?ts=${Date.now()}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) return [];
+      const raw = await response.json();
+      if (!Array.isArray(raw)) return [];
+      return raw.map((job) => ({
+        id: crypto.randomUUID(),
+        roleId: role.id,
+        platform: "LinkedIn",
+        company: job.company || "LinkedIn",
+        title: job.title || role.title,
+        url: job.url,
+        location: job.location || "Not listed",
+        salary: role.salaryExpectation || "Not listed",
+        description:
+          job.description ||
+          `${job.company || "This company"} is hiring for ${job.title || role.title}.`,
+        discoveredAt: today(),
+      }));
+    } catch {
+      // Dev server not running, or the agent hasn't scraped yet.
+      return [];
+    }
+  }
+
+  async function scanJobs() {
+    setAgentMessage("Loading LinkedIn jobs...");
+    const scraped = await fetchScrapedJobs(selectedRole);
+    const pasted = parseImportedJobs(selectedRole);
+
+    const seen = new Set();
+    const jobs = [...scraped, ...pasted].filter((job) => {
+      if (!job.url || seen.has(job.url)) return false;
+      seen.add(job.url);
+      return true;
+    });
+
     if (jobs.length === 0) {
       setAgentMessage(
-        "No LinkedIn jobs imported yet. Run the local LinkedIn agent, or paste LinkedIn job results in role setup.",
+        "No LinkedIn jobs found. Run `npm run linkedin:scrape` in a terminal (with `npm run dev` also running), or paste exact job posting URLs in role setup.",
       );
-      window.setTimeout(() => setAgentMessage(""), 5200);
+      window.setTimeout(() => setAgentMessage(""), 6000);
       return;
     }
+
     setState((current) => ({
       ...current,
       discoveredJobs: [
@@ -431,6 +471,10 @@ function App() {
       ],
     }));
     setActiveJobId(jobs[0]?.id || null);
+    setAgentMessage(
+      `Loaded ${jobs.length} job${jobs.length === 1 ? "" : "s"} (${scraped.length} scraped, ${pasted.length} pasted).`,
+    );
+    window.setTimeout(() => setAgentMessage(""), 3500);
   }
 
   function trackJob(job) {
@@ -704,6 +748,9 @@ function App() {
               <AutomationPanel
                 automation={automation}
                 setAutomation={setAutomation}
+                candidate={candidate}
+                role={selectedRole}
+                job={activeJob}
               />
             </>
           )}
@@ -786,10 +833,21 @@ function App() {
   );
 }
 
-function AutomationPanel({ automation, setAutomation }) {
+function AutomationPanel({ automation, setAutomation, candidate, role, job }) {
   function update(key, value) {
     setAutomation((current) => ({ ...current, [key]: value }));
   }
+
+  const automationConfig = buildAutomationConfig(
+    candidate,
+    role,
+    job,
+    automation,
+  );
+  const configJson = JSON.stringify(automationConfig, null, 2);
+  const configFileName = `automation/${slugify(`${job.company}-${job.title}`) || "job"}.json`;
+  const dryRunCommand = `npm run automate:apply -- --config ${configFileName} --keepOpen`;
+  const submitCommand = `npm run automate:apply -- --config ${configFileName} --submit --keepOpen`;
 
   return (
     <section className="automation-panel">
@@ -837,6 +895,40 @@ function AutomationPanel({ automation, setAutomation }) {
         value={automation.extraAnswers}
         onChange={(value) => update("extraAnswers", value)}
       />
+
+      <div className="automation-heading">
+        <div>
+          <h2>Generated Automation Config</h2>
+          <p>
+            Save this file, then run the command below from the project folder
+            to fill this specific application.
+          </p>
+        </div>
+      </div>
+
+      <div className="command-box">
+        <div>
+          <span>1. Save as {configFileName}</span>
+          <pre className="config-preview">{configJson}</pre>
+        </div>
+        <CopyButton text={configJson} />
+      </div>
+
+      <div className="command-box">
+        <div>
+          <span>2. Dry run (stops before the final submit click)</span>
+          <code>{dryRunCommand}</code>
+        </div>
+        <CopyButton text={dryRunCommand} />
+      </div>
+
+      <div className="command-box danger">
+        <div>
+          <span>3. Submit only after reviewing the dry run</span>
+          <code>{submitCommand}</code>
+        </div>
+        <CopyButton text={submitCommand} />
+      </div>
     </section>
   );
 }
