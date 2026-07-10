@@ -11,6 +11,7 @@
     "linkedin:login": "node automation/linkedin-agent.mjs --login --keepOpen",
     "linkedin:scrape": "node automation/linkedin-agent.mjs",
     "linkedin:auto-apply": "node automation/linkedin-agent.mjs --apply --submit --interval 5",
+    "jobs:fetch": "node automation/fetch-jobs.mjs",
     "playwright:install": "playwright install chromium"
   },
   "dependencies": {

@@ -26,8 +26,8 @@ const roleTemplates = [
     platforms: [
       {
         id: crypto.randomUUID(),
-        name: "LinkedIn",
-        url: "https://www.linkedin.com/jobs/search/?keywords=Frontend%20Engineer",
+        name: "RemoteOK",
+        url: "https://remoteok.com/remote-jobs",
         enabled: true,
       },
     ],
@@ -41,7 +41,7 @@ const starterState = {
     phone: "",
     location: "Remote / Hybrid",
     links:
-      "LinkedIn: https://linkedin.com/in/your-profile\nPortfolio: https://your-site.com",
+      "Profile: https://linkedin.com/in/your-profile\nPortfolio: https://your-site.com",
   },
   roles: roleTemplates,
   selectedRoleId: roleTemplates[0].id,
@@ -134,12 +134,23 @@ function platformKind(name, url) {
     return "wellfound";
   if (source.includes("indeed")) return "indeed";
   if (source.includes("naukri")) return "naukri";
+  if (source.includes("greenhouse")) return "greenhouse";
+  if (source.includes("lever")) return "lever";
+  if (source.includes("remoteok")) return "remoteok";
+  if (source.includes("workable") || source.includes("ashby"))
+    return "workable";
+  if (
+    source.includes("usajobs") ||
+    source.includes("usa jobs") ||
+    source.includes("usajob")
+  )
+    return "usajobs";
   return "generic";
 }
 
 function parseImportedJobs(role) {
   return lines(role.jobPostings || "")
-    .filter((line) => line.includes("linkedin.com/jobs"))
+    .filter((line) => /https?:\/\//.test(line))
     .map((line, index) => {
       const [
         url,
@@ -147,17 +158,32 @@ function parseImportedJobs(role) {
         title = role.title,
         location = "Not listed",
       ] = line.split("|").map((part) => part.trim());
+      const kind = platformKind("", url);
+      const platformLabel =
+        kind === "linkedin"
+          ? "LinkedIn"
+          : kind === "greenhouse"
+            ? "Greenhouse"
+            : kind === "lever"
+              ? "Lever"
+              : kind === "remoteok"
+                ? "RemoteOK"
+                : kind === "workable"
+                  ? "Workable"
+                  : kind === "usajobs"
+                    ? "USAJobs"
+                    : "Imported";
+
       return {
         id: crypto.randomUUID(),
         roleId: role.id,
-        platform:
-          platformKind("", url) === "linkedin" ? "LinkedIn" : "Imported",
+        platform: platformLabel,
         company,
         title,
         url,
         location,
         salary: role.salaryExpectation || "Not listed",
-        description: `${company} is hiring for ${title}. Imported from an exact job posting URL, so the apply flow opens the specific role instead of the platform home page.`,
+        description: `${company} is hiring for ${title}. Imported from an exact job posting URL (paste exact URLs in role setup).`,
         discoveredAt: today(),
         sourceIndex: index,
       };
@@ -321,6 +347,9 @@ function App() {
       '{\n  "Work authorization": "Yes",\n  "Why are you interested": "The role maps closely to my experience and product engineering interests."\n}',
   });
   const [agentMessage, setAgentMessage] = useState("");
+  const [titleFilter, setTitleFilter] = useState("");
+  const [minYearsFilter, setMinYearsFilter] = useState("");
+  const [matchThreshold, setMatchThreshold] = useState(0);
   const { candidate, roles, selectedRoleId, discoveredJobs, tracker } = state;
   const selectedRole =
     roles.find((role) => role.id === selectedRoleId) || roles[0];
@@ -330,10 +359,40 @@ function App() {
     activeJob && selectedRole
       ? buildApplicationPacket(candidate, selectedRole, activeJob)
       : null;
-  const relevantJobs = useMemo(
-    () => discoveredJobs.filter((job) => job.roleId === selectedRole?.id),
-    [discoveredJobs, selectedRole],
-  );
+  const relevantJobs = useMemo(() => {
+    if (!selectedRole) return [];
+    return discoveredJobs.filter((job) => {
+      if (job.roleId === selectedRole.id) return true;
+      // fallback: surface jobs that look relevant by title or match score
+      try {
+        const titleMatch =
+          job.title &&
+          job.title.toLowerCase().includes(selectedRole.title.toLowerCase());
+        const score = scoreMatch(selectedRole, job).score || 0;
+        if (titleMatch || score >= 15) return true;
+      } catch (e) {
+        return false;
+      }
+      return false;
+    });
+  }, [discoveredJobs, selectedRole]);
+
+  function jobMatchesExperience(job, years) {
+    if (!years) return true;
+    const y = String(years).trim();
+    if (!y) return true;
+    const n = Number(y);
+    if (!Number.isFinite(n)) return true;
+    const text = `${job.title || ""} ${job.description || ""}`.toLowerCase();
+    // look for explicit mentions like "3 years", "3+ years", "minimum 3 years"
+    if (new RegExp(`\\b${n}\\+?\\s+years?\\b`).test(text)) return true;
+    if (new RegExp(`minimum\\s+${n}\\s+years?`).test(text)) return true;
+    // If job mentions seniority, assume >=3 for senior
+    if (n <= 2 && /junior|entry/.test(text)) return true;
+    if (n >= 5 && /senior|principal|lead/.test(text)) return true;
+    // If nothing obvious, allow it (don't be too strict)
+    return true;
+  }
 
   function saveWorkspace() {
     localStorage.setItem(storageKey, JSON.stringify(state));
@@ -383,8 +442,8 @@ function App() {
                 ...role.platforms,
                 {
                   id: crypto.randomUUID(),
-                  name: "LinkedIn",
-                  url: "https://www.linkedin.com/jobs/search/",
+                  name: "RemoteOK",
+                  url: "https://remoteok.com/remote-jobs",
                   enabled: true,
                 },
               ],
@@ -414,27 +473,76 @@ function App() {
 
   async function fetchScrapedJobs(role) {
     try {
-      const response = await fetch(
-        `/automation/artifacts/linkedin-jobs.json?ts=${Date.now()}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) return [];
-      const raw = await response.json();
-      if (!Array.isArray(raw)) return [];
-      return raw.map((job) => ({
-        id: crypto.randomUUID(),
-        roleId: role.id,
-        platform: "LinkedIn",
-        company: job.company || "LinkedIn",
-        title: job.title || role.title,
-        url: job.url,
-        location: job.location || "Not listed",
-        salary: role.salaryExpectation || "Not listed",
-        description:
-          job.description ||
-          `${job.company || "This company"} is hiring for ${job.title || role.title}.`,
-        discoveredAt: today(),
-      }));
+      // Prefer a generic `jobs.json` artifact that can aggregate allowed job API
+      // outputs (Greenhouse, Lever, RemoteOK, Workable, USAJobs, etc.). Use
+      // project-provided artifacts that come from public APIs or allowed feeds.
+      const urlsToTry = [`/automation/artifacts/jobs.json?ts=${Date.now()}`];
+
+      for (const url of urlsToTry) {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) continue;
+        const raw = await response.json();
+        if (!Array.isArray(raw)) continue;
+        console.debug(
+          "fetchScrapedJobs: fetched",
+          raw.length,
+          "items from",
+          url,
+        );
+        // Normalize
+        const normalized = raw.map((job) => ({
+          id: crypto.randomUUID(),
+          roleId: role.id,
+          platform:
+            job.platform ||
+            platformKind(job.source || job.company || "", job.url) ||
+            "Imported",
+          company:
+            job.company || job.employer || job.source || "Imported Company",
+          title: job.title || role.title,
+          url: job.url,
+          location: job.location || job.city || "Not listed",
+          salary: role.salaryExpectation || job.salary || "Not listed",
+          description:
+            job.description ||
+            `${job.company || "This company"} is hiring for ${job.title || role.title}.`,
+          discoveredAt: today(),
+          raw: job,
+        }));
+
+        // Filter by relevance to the supplied role: title/skill keyword match, score, and experience
+        const relevanceThreshold = 15; // percent (lowered to be less strict)
+        const roleKeywords = tokenize(
+          `${role.title} ${role.skills} ${role.cvText}`,
+        ).map((k) => k.toLowerCase());
+        const filtered = normalized.filter((j) => {
+          try {
+            const jtext =
+              `${j.title || ""} ${j.description || ""}`.toLowerCase();
+            const titleMatch = String(j.title || "")
+              .toLowerCase()
+              .includes(String(role.title || "").toLowerCase());
+            const keywordMatch = roleKeywords.some((kw) => jtext.includes(kw));
+            const score = scoreMatch(role, j).score || 0;
+            const expOk = jobMatchesExperience(j, role.yearsExperience);
+            // accept if experience ok AND (title matches OR any role keyword appears OR score meets threshold)
+            return (
+              expOk &&
+              (titleMatch || keywordMatch || score >= relevanceThreshold)
+            );
+          } catch (e) {
+            return false;
+          }
+        });
+        console.debug(
+          "fetchScrapedJobs: returning",
+          filtered.length,
+          "relevant items for role",
+          role.title,
+        );
+        return filtered;
+      }
+      return [];
     } catch {
       // Dev server not running, or the agent hasn't scraped yet.
       return [];
@@ -442,9 +550,12 @@ function App() {
   }
 
   async function scanJobs() {
-    setAgentMessage("Loading LinkedIn jobs...");
+    setAgentMessage("Loading jobs from configured sources...");
+    console.debug("scanJobs: selectedRoleId=", selectedRole?.id);
     const scraped = await fetchScrapedJobs(selectedRole);
+    console.debug("scanJobs: scraped count=", scraped.length);
     const pasted = parseImportedJobs(selectedRole);
+    console.debug("scanJobs: pasted count=", pasted.length);
 
     const seen = new Set();
     const jobs = [...scraped, ...pasted].filter((job) => {
@@ -455,7 +566,7 @@ function App() {
 
     if (jobs.length === 0) {
       setAgentMessage(
-        "No LinkedIn jobs found. Run `npm run linkedin:scrape` in a terminal (with `npm run dev` also running), or paste exact job posting URLs in role setup.",
+        "No jobs found. Run the local job fetcher (e.g. `npm run jobs:fetch`) or paste exact job posting URLs in role setup.",
       );
       window.setTimeout(() => setAgentMessage(""), 6000);
       return;
@@ -516,7 +627,7 @@ function App() {
   function finalApply(job) {
     markApplied(job);
     setAgentMessage(
-      "Queued for the local LinkedIn agent. The agent uses your signed-in browser profile and does not store your LinkedIn password.",
+      "Queued for the local automation agent. The agent runs on your machine and does not store your passwords.",
     );
     window.open(job.url, "_blank", "noreferrer");
     window.setTimeout(() => setAgentMessage(""), 5200);
@@ -621,7 +732,7 @@ function App() {
             <p>{selectedRole.summary}</p>
             <div className="meta-list">
               <span>{selectedRole.cvFile || "No CV file selected"}</span>
-              <span>LinkedIn only</span>
+              <span>Job boards + pasted URLs</span>
             </div>
           </div>
           <div className="actions align-left">
@@ -636,7 +747,7 @@ function App() {
               Edit role
             </button>
             <button onClick={scanJobs} type="button">
-              Load LinkedIn jobs
+              Load job-board results
             </button>
           </div>
         </article>
@@ -646,7 +757,9 @@ function App() {
         <article className="panel jobs-panel">
           <div className="panel-heading">
             <h2>Relevant Openings</h2>
-            <p>LinkedIn postings from your local scraping agent.</p>
+            <p>
+              Job postings from configured job board fetchers or pasted URLs.
+            </p>
           </div>
           {agentMessage ? (
             <div className="notice success">{agentMessage}</div>
@@ -655,8 +768,7 @@ function App() {
             <div className="empty-state">
               <h3>No jobs scraped yet</h3>
               <p>
-                Run the local LinkedIn agent, then paste or import its LinkedIn
-                job results.
+                Run the local job fetcher, then paste or import its job results.
               </p>
             </div>
           ) : (
@@ -855,8 +967,8 @@ function AutomationPanel({ automation, setAutomation, candidate, role, job }) {
         <div>
           <h2>Application Answers</h2>
           <p>
-            The local LinkedIn agent uses these values when it fills Easy Apply
-            forms.
+            Local automation uses these values when it fills application forms
+            on your machine.
           </p>
         </div>
       </div>
@@ -1046,7 +1158,7 @@ function RoleModal({
               rows={4}
               value={role.jobPostings || ""}
               onChange={(value) => onUpdateRole(role.id, "jobPostings", value)}
-              placeholder="https://www.linkedin.com/jobs/view/123 | Company | Role title | Remote"
+              placeholder="https://jobs.greenhouse.io/company/example/jobs/123 | Company | Role title | Remote"
             />
             <Field
               label="Skills"
@@ -1064,7 +1176,7 @@ function RoleModal({
             />
 
             <div className="platform-heading">
-              <h3>LinkedIn searches</h3>
+              <h3>Job board searches</h3>
               <button
                 className="ghost"
                 onClick={() => onAddPlatform(role.id)}
@@ -1086,7 +1198,7 @@ function RoleModal({
                         event.target.value,
                       )
                     }
-                    aria-label="LinkedIn search name"
+                    aria-label="Search name"
                   />
                   <input
                     value={platform.url}
@@ -1098,7 +1210,7 @@ function RoleModal({
                         event.target.value,
                       )
                     }
-                    aria-label="LinkedIn search URL"
+                    aria-label="Search URL"
                   />
                   <label className="toggle">
                     <input
